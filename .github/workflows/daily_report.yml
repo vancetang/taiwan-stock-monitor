@@ -1,0 +1,33 @@
+name: Daily Stock Analysis Report
+
+# 設定執行觸發條件
+on:
+  schedule:
+    # 台北時間 17:15 執行 (UTC 09:15)
+    # 台股收盤後 2 小時，確保 Yahoo Finance 數據已穩定
+    - cron: '15 9 * * 1-5'
+  workflow_dispatch: # 讓你可以隨時手動點擊按鈕執行測試
+
+jobs:
+  run-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 檢出程式碼
+        uses: actions/checkout@v3
+
+      - name: 🐍 設定 Python 環境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 📦 安裝相依套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 📊 執行監控分析程式
+        env:
+          # 這裡連結到你在 Settings 設定的 Secret
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python main.py
