@@ -4,3 +4,6 @@ matplotlib
 yfinance
 resend
 tqdm
+requests
+lxml
+html5lib
