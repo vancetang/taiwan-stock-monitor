@@ -65,7 +65,7 @@ A professional-grade, multi-market automated monitoring and data warehousing sys
 - **Visualization**: Matplotlib, Numpy
 - **Automation**: GitHub Actions (Matrix Strategy)
 - **Cloud Sync**: Google Drive API
-
+------------------------------------------------------------------------------------------------------------------------------
 
 ⚠️ Data Integrity & Learning Note (資料完整性與練習說明)
 [!IMPORTANT] [English] Raw Data vs. Production Ready This repository currently provides Raw Data without deep post-processing. Users may encounter anomalies such as Corporate Action Gaps (unadjusted splits) or Resume Jumps (suspension noise) that may lead to distorted return calculations (e.g., ghost >100% monthly returns).
@@ -74,7 +74,7 @@ We deliberately keep the data "raw" to make it a perfect Data Cleaning Practice 
 
 [!IMPORTANT] [中文] 原始數據與實戰差異說明 本專案目前產出的數據為 原始數據 (Raw Data)，尚未經過深度清洗。分析時可能會遇到除權息缺口、停牌復牌跳空或殭屍 K 線，這可能導致報酬率統計異常（例如：明明沒漲卻顯示月 K 報酬 > 100%）。
 
-為什麼這是絕佳的練習素材？ 我們刻意保留數據的「原始狀態」，適合作為 Pandas 資料處理 的實戰練習。如果你想學習如何實作專業級的清洗邏輯（如：乒乓模式偵測、物理價格防護、復牌標記），請參考我的技術專文： 👉 方格子技術導引：現代化資料清洗管線實作
+為什麼這是絕佳的練習素材？ 我們刻意保留數據的「原始狀態」，適合作為 Pandas 資料處理 的實戰練習。如果你想學習如何實作專業級的清洗邏輯（如：乒乓模式偵測、物理價格防護、復牌標記），請參考我的技術專文： 👉 方格子技術導引：現代化資料清洗管線實作https://vocus.cc/article/6949c6a9fd8978000142a5c6
 
 🛠️ Data Cleaning Goals for Learners (給學習者的練習目標)
 如果你想利用此專案練手，建議嘗試實作以下邏輯：
@@ -84,7 +84,7 @@ We deliberately keep the data "raw" to make it a perfect Data Cleaning Practice 
 [Ping-Pong Filter]：過濾單日 +/- 40% 的異常反轉（通常是數據雜訊）。
 
 [Volume Guard]：剔除成交量極低、不具代表性的「殭屍股」。
-
+---------------------------------------------------------------------------------------------------------------------------------
 ## ⚖️ License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 ![googlesheet1](image/6job1.png)
