@@ -163,7 +163,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 📢 **系統更新 (2025/12/23)**：優化數據抓取管線與快取機制，詳情內容請[按此連結查看完整更新日誌](https://vocus.cc/article/694b1b63fd89780001e66192)。
 
-<img width="933" height="678" alt="image" src="https://github.com/user-attachments/assets/197a3eed-2791-4f43-bec7-ebcbc0696b6a" />
+<img width="901" height="585" alt="image" src="https://github.com/user-attachments/assets/ba307ab0-73cc-49ae-a33e-d8de5e4454b5" />
+
 
 
 
