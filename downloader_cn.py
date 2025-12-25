@@ -1,134 +1,178 @@
 # -*- coding: utf-8 -*-
-import os, sys, time, random, json, subprocess, sqlite3
+import os, sys, sqlite3, json, time, random, io
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-# ========== 參數與路徑設定 ==========
+# ========== 1. 環境判斷與參數設定 ==========
 MARKET_CODE = "cn-share"
-DATA_SUBDIR = "dayK"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data", MARKET_CODE, DATA_SUBDIR)
-LIST_DIR = os.path.join(BASE_DIR, "data", MARKET_CODE, "lists")
-CACHE_LIST_PATH = os.path.join(LIST_DIR, "cn_stock_list_cache.json")
-AUDIT_DB_PATH = os.path.join(BASE_DIR, "data_warehouse_audit.db")
+DB_PATH = os.path.join(BASE_DIR, "cn_stock_warehouse.db")
 
-THREADS_CN = 4 
-DATA_EXPIRY_SECONDS = 3600 # 1 小時內抓過則跳過
+# 💡 自動判斷環境：GitHub Actions 會帶入此環境變數
+IS_GITHUB_ACTIONS = os.getenv('GITHUB_ACTIONS') == 'true'
 
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(LIST_DIR, exist_ok=True)
+# ✅ 快取設定 (本機回測專用)
+CACHE_DIR = os.path.join(BASE_DIR, "cache_cn")
+DATA_EXPIRY_SECONDS = 86400  # 本機快取效期：24小時
+
+if not IS_GITHUB_ACTIONS and not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+# ✅ 效能設定：本機加速為 6 執行緒，GitHub 維持 4 以保穩定
+THREADS_CN = 4 if IS_GITHUB_ACTIONS else 6 
 
 def log(msg: str):
     print(f"{pd.Timestamp.now():%H:%M:%S}: {msg}")
 
-def ensure_pkg(pkg: str):
+# ========== 2. 核心輔助函式 ==========
+
+def insert_or_replace(table, conn, keys, data_iter):
+    """防止重複寫入的核心 SQL 邏輯 (同港股 V5.0)"""
+    sql = f"INSERT OR REPLACE INTO {table.name} ({', '.join(keys)}) VALUES ({', '.join(['?']*len(keys))})"
+    conn.executemany(sql, data_iter)
+
+def init_db():
+    """初始化資料庫結構"""
+    conn = sqlite3.connect(DB_PATH)
     try:
-        __import__(pkg)
-    except ImportError:
-        log(f"🔧 正在安裝 {pkg}...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", pkg])
+        # PRIMARY KEY 是防重複的第一道防線
+        conn.execute('''CREATE TABLE IF NOT EXISTS stock_prices (
+                            date TEXT, symbol TEXT, open REAL, high REAL, 
+                            low REAL, close REAL, volume INTEGER,
+                            PRIMARY KEY (date, symbol))''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS stock_info (
+                            symbol TEXT PRIMARY KEY, name TEXT, sector TEXT, updated_at TEXT)''')
+        conn.commit()
+    finally:
+        conn.close()
 
-def init_audit_db():
-    conn = sqlite3.connect(AUDIT_DB_PATH)
-    conn.execute('''CREATE TABLE IF NOT EXISTS sync_audit (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        execution_time TEXT,
-        market_id TEXT,
-        total_count INTEGER,
-        success_count INTEGER,
-        fail_count INTEGER,
-        success_rate REAL
-    )''')
-    conn.close()
-
-def get_cn_list():
-    """獲取 A 股清單 (含多重備援)"""
-    ensure_pkg("akshare")
+def get_cn_stock_list():
+    """從 Akshare 獲取清單並同步寫入 stock_info"""
     import akshare as ak
-    threshold = 4500
-    
-    # 檢查今日快取
-    if os.path.exists(CACHE_LIST_PATH):
-        if datetime.fromtimestamp(os.path.getmtime(CACHE_LIST_PATH)).date() == datetime.now().date():
-            with open(CACHE_LIST_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if len(data) >= threshold: return data
-
-    log("📡 更新清單中...")
+    log(f"📡 獲取 A 股名單... (環境: {'GitHub' if IS_GITHUB_ACTIONS else 'Local'})")
     try:
         df_sh = ak.stock_sh_a_spot_em()
         df_sz = ak.stock_sz_a_spot_em()
         df = pd.concat([df_sh, df_sz], ignore_index=True)
+        
+        # 過濾格式
         df['code'] = df['代码'].astype(str).str.zfill(6)
         valid_prefixes = ('000','001','002','003','300','301','600','601','603','605','688')
         df = df[df['code'].str.startswith(valid_prefixes)]
-        res = [f"{row['code']}&{row['名称' if '名称' in df.columns else '名稱']}" for _, row in df.iterrows()]
-        if len(res) >= threshold:
-            with open(CACHE_LIST_PATH, "w", encoding="utf-8") as f:
-                json.dump(res, f, ensure_ascii=False)
-            return res
-    except: pass
-    return ["600519&貴州茅台", "000001&平安銀行"] if not os.path.exists(CACHE_LIST_PATH) else json.load(open(CACHE_LIST_PATH))
+        
+        name_col = '名称' if '名称' in df.columns else '名稱'
+        conn = sqlite3.connect(DB_PATH)
+        stock_list = []
+        
+        for _, row in df.iterrows():
+            # Yahoo 格式：上海 .SS, 深圳 .SZ
+            symbol = f"{row['code']}.SS" if row['code'].startswith('6') else f"{row['code']}.SZ"
+            name = row[name_col]
+            conn.execute("INSERT OR REPLACE INTO stock_info (symbol, name, updated_at) VALUES (?, ?, ?)",
+                         (symbol, name, datetime.now().strftime("%Y-%m-%d")))
+            stock_list.append((symbol, name))
+            
+        conn.commit()
+        conn.close()
+        log(f"✅ 成功獲取 A 股清單: {len(stock_list)} 檔")
+        return stock_list
+    except Exception as e:
+        log(f"⚠️ 獲取名單失敗: {e}")
+        return []
 
-def download_one(item):
-    """單檔下載：具備時效檢查"""
+# ========== 3. 核心下載/快取分流邏輯 ==========
+
+def download_one(args):
+    symbol, name, mode = args
+    csv_path = os.path.abspath(os.path.join(CACHE_DIR, f"{symbol}.csv"))
+    start_date = "2020-01-01" if mode == 'hot' else "1990-01-01"
+    
+    # --- ⚡ 閃電快取：本機模式分流 ---
+    if not IS_GITHUB_ACTIONS and os.path.exists(csv_path):
+        file_age = time.time() - os.path.getmtime(csv_path)
+        if file_age < DATA_EXPIRY_SECONDS:
+            # 💡 為了加速，本地快取跳過 SQL 寫入 (因為 DB 應該已有資料)
+            return {"symbol": symbol, "status": "cache"}
+
     try:
-        code, name = item.split('&', 1)
-        symbol = f"{code}.SS" if code.startswith('6') else f"{code}.SZ"
-        out_path = os.path.join(DATA_DIR, f"{code}_{name}.csv")
-
-        # ✨ 智慧快取邏輯
-        if os.path.exists(out_path):
-            file_age = time.time() - os.path.getmtime(out_path)
-            if file_age < DATA_EXPIRY_SECONDS and os.path.getsize(out_path) > 1000:
-                return {"status": "exists", "tkr": code}
-
-        time.sleep(random.uniform(0.7, 1.5))
+        # 🏎️ 亞秒級等待，增加併發穩定性
+        time.sleep(random.uniform(0.3, 0.8))
+        
         tk = yf.Ticker(symbol)
-        hist = tk.history(period="2y", timeout=25)
-        if hist is not None and not hist.empty:
-            hist.reset_index(inplace=True)
-            hist.columns = [c.lower() for c in hist.columns]
-            hist.to_csv(out_path, index=False, encoding='utf-8-sig')
-            return {"status": "success", "tkr": code}
-        return {"status": "empty", "tkr": code}
-    except:
-        return {"status": "error", "tkr": code}
+        hist = tk.history(start=start_date, timeout=20, auto_adjust=False)
+        
+        if hist is None or hist.empty:
+            return {"symbol": symbol, "status": "empty"}
+            
+        hist.reset_index(inplace=True)
+        hist.columns = [c.lower() for c in hist.columns]
+        if 'date' in hist.columns:
+            # A股時間處理
+            hist['date'] = pd.to_datetime(hist['date']).dt.tz_localize(None).dt.strftime('%Y-%m-%d')
+        
+        df_final = hist[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
+        df_final['symbol'] = symbol
+        
+        # 1. 存入本機 CSV 快取
+        if not IS_GITHUB_ACTIONS:
+            df_final.to_csv(csv_path, index=False)
 
-def main():
+        # 2. 存入 SQL (使用防重複的 insert_or_replace)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        df_final.to_sql('stock_prices', conn, if_exists='append', index=False, method=insert_or_replace)
+        conn.close()
+        
+        return {"symbol": symbol, "status": "success"}
+    except Exception as e:
+        return {"symbol": symbol, "status": "error", "reason": str(e)}
+
+# ========== 4. 主同步流程 ==========
+
+def run_sync(mode='hot'):
     start_time = time.time()
-    init_audit_db()
-    items = get_cn_list()
-    stats = {"success": 0, "exists": 0, "empty": 0, "error": 0}
-    fail_list = []
+    init_db()
+    
+    items = get_cn_stock_list()
+    if not items:
+        log("❌ 無法取得名單，終止。")
+        return {"fail_list": [], "success": 0}
 
+    log(f"🚀 開始執行 A 股 ({mode.upper()}) | 目標: {len(items)} 檔")
+
+    stats = {"success": 0, "cache": 0, "empty": 0, "error": 0}
+    fail_list = []
+    task_args = [(item[0], item[1], mode) for item in items]
+    
     with ThreadPoolExecutor(max_workers=THREADS_CN) as executor:
-        futures = {executor.submit(download_one, it): it for it in items}
-        pbar = tqdm(total=len(items), desc="CN 下載進度")
+        futures = {executor.submit(download_one, arg): arg for arg in task_args}
+        pbar = tqdm(total=len(items), desc=f"A股處理中({mode})")
+        
         for f in as_completed(futures):
             res = f.result()
-            s = res["status"]
+            s = res.get("status", "error")
             stats[s] += 1
-            if s in ["error", "empty"]: fail_list.append(res["tkr"])
+            if s == "error":
+                fail_list.append(res.get("symbol"))
             pbar.update(1)
         pbar.close()
 
-    total = len(items)
-    success = stats['success'] + stats['exists']
-    fail = stats['error'] + stats['empty']
-    
-    # 紀錄 Audit DB
-    conn = sqlite3.connect(AUDIT_DB_PATH)
-    now_ts = (datetime.utcnow() + pd.Timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute('INSERT INTO sync_audit (execution_time, market_id, total_count, success_count, fail_count, success_rate) VALUES (?,?,?,?,?,?)',
-                 (now_ts, MARKET_CODE, total, success, fail, round(success/total*100, 2) if total>0 else 0))
-    conn.commit()
+    log("🧹 資料庫優化 (VACUUM)...")
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("VACUUM")
     conn.close()
 
-    return {"total": total, "success": success, "fail": fail, "fail_list": fail_list}
+    duration = (time.time() - start_time) / 60
+    log(f"📊 同步完成！費時: {duration:.1f} 分鐘")
+    log(f"✅ 新增: {stats['success']} | ⚡ 快取跳過: {stats['cache']} | ❌ 錯誤: {stats['error']}")
+
+    # 💡 回傳給 main.py 的格式
+    return {
+        "success": stats['success'] + stats['cache'],
+        "fail_list": fail_list
+    }
 
 if __name__ == "__main__":
-    main()
+    run_sync(mode='hot')
