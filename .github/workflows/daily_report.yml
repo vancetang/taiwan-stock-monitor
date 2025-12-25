@@ -1,15 +1,12 @@
 name: Global Market Monitor Parallel
 
 on:
-  # 定期執行：週一至週五，UTC 10:30 (台北時間 18:30)
   schedule:
     - cron: '30 10 * * 1-5'
-  
-  # 手動執行
   workflow_dispatch:
     inputs:
       market_choice:
-        description: '選擇要執行的市場 (Select Market)'
+        description: 'Select Market'
         required: true
         default: 'all'
         type: choice
@@ -24,11 +21,9 @@ on:
 
 jobs:
   global-market-analysis:
-    # 這裡顯示在 GitHub 上的名稱會根據矩陣動態變化
     name: ${{ matrix.market.emoji }} ${{ matrix.market.name }} Analysis
     runs-on: ubuntu-latest
-    
-    # 💡 關鍵修正：判斷目前的矩陣市場是否符合手動選擇的市場
+    # 💡 修改點 1：將 if 判斷移到 job 層級，下方的 steps 就不再需要寫 if
     if: |
       github.event_name == 'schedule' || 
       github.event.inputs.market_choice == 'all' || 
@@ -46,8 +41,7 @@ jobs:
           - { id: "kr-share", name: "Korea",  emoji: "🇰🇷" }
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -61,7 +55,6 @@ jobs:
           path: |
             data/${{ matrix.market.id }}/dayK
             data/${{ matrix.market.id }}/lists
-          # 根據市場 ID 快取，避免不同市場數據混雜
           key: ${{ runner.os }}-stock-${{ matrix.market.id }}-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-stock-${{ matrix.market.id }}-
@@ -76,5 +69,4 @@ jobs:
       - name: Run Market Analysis
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        # 💡 關鍵修正：這裡必須寫 --market 並帶入 matrix.market.id
         run: python main.py --market ${{ matrix.market.id }}
