@@ -11,6 +11,7 @@ class StockNotifier:
         self.tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
         self.resend_api_key = os.getenv("RESEND_API_KEY")
+        self.mail = os.getenv("PERSION_EMAIL")
 
         if self.resend_api_key:
             resend.api_key = self.resend_api_key
@@ -177,7 +178,7 @@ class StockNotifier:
         try:
             resend.Emails.send({
                 "from": "StockMonitor <onboarding@resend.dev>",
-                "to": "vance.tw@gmail.com",
+                "to": self.mail,
                 "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
                 "html": html_content,
                 "attachments": attachments
