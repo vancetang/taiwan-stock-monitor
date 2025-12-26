@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       market_choice:
-        description: 'Select Market'
+        description: "Select Market"
         required: true
-        default: 'all'
+        default: "all"
         type: choice
         options:
           - all
@@ -28,11 +28,11 @@ jobs:
       matrix:
         market:
           - { id: "tw-share", name: "Taiwan", emoji: "🇹🇼" }
-          - { id: "us-share", name: "US",     emoji: "🇺🇸" }
-          - { id: "hk-share", name: "HK",     emoji: "🇭🇰" }
-          - { id: "cn-share", name: "China",  emoji: "🇨🇳" }
-          - { id: "jp-share", name: "Japan",  emoji: "🇯🇵" }
-          - { id: "kr-share", name: "Korea",  emoji: "🇰🇷" }
+          - { id: "us-share", name: "US", emoji: "🇺🇸" }
+          - { id: "hk-share", name: "HK", emoji: "🇭🇰" }
+          - { id: "cn-share", name: "China", emoji: "🇨🇳" }
+          - { id: "jp-share", name: "Japan", emoji: "🇯🇵" }
+          - { id: "kr-share", name: "Korea", emoji: "🇰🇷" }
 
     steps:
       # 💡 修正點：將判斷移到第一個 Step 的 if 中
@@ -42,8 +42,8 @@ jobs:
         run: |
           echo "Checking if ${{ matrix.market.id }} should run..."
         if: |
-          github.event_name == 'schedule' || 
-          github.event.inputs.market_choice == 'all' || 
+          github.event_name == 'schedule' ||
+          github.event.inputs.market_choice == 'all' ||
           github.event.inputs.market_choice == matrix.market.id
 
       - name: Checkout Code
@@ -55,8 +55,8 @@ jobs:
         if: steps.check_run.outcome == 'success'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: "3.10"
+          cache: "pip"
 
       - name: Cache Stock Data
         if: steps.check_run.outcome == 'success'
@@ -81,4 +81,7 @@ jobs:
         if: steps.check_run.outcome == 'success'
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          PERSION_EMAIL: ${{ vars.PERSION_EMAIL }}
         run: python main.py --market ${{ matrix.market.id }}
