@@ -174,7 +174,7 @@ class StockNotifier:
         try:
             resend.Emails.send({
                 "from": "StockMonitor <onboarding@resend.dev>",
-                "to": "grissomlin643@gmail.com",
+                "to": "vance.tw@gmail.com",
                 "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
                 "html": html_content,
                 "attachments": attachments
