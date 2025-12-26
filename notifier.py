@@ -11,7 +11,7 @@ class StockNotifier:
         self.tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.tg_chat_id = os.getenv("TELEGRAM_CHAT_ID")
         self.resend_api_key = os.getenv("RESEND_API_KEY")
-        
+
         if self.resend_api_key:
             resend.api_key = self.resend_api_key
 
@@ -22,21 +22,24 @@ class StockNotifier:
 
     def send_telegram(self, message):
         """發送 Telegram 即時簡報"""
+        print(f"🚀 正在發送 Telegram 簡報: {message}")
         if not self.tg_token or not self.tg_chat_id:
+            print("⚠️ 缺少 Telegram 金鑰或 Chat ID，無法發送簡報。")
             return False
-        
+
         # 取得簡短時間戳
         ts = self.get_now_time_str().split(" ")[1]
         full_message = f"{message}\n\n🕒 <i>Sent at {ts} (UTC+8)</i>"
-        
+
         url = f"https://api.telegram.org/bot{self.tg_token}/sendMessage"
         payload = {
-            "chat_id": self.tg_chat_id, 
-            "text": full_message, 
+            "chat_id": self.tg_chat_id,
+            "text": full_message,
             "parse_mode": "HTML"
         }
         try:
             requests.post(url, json=payload, timeout=10)
+            print(f"✅ Telegram 發送成功！")
             return True
         except Exception as e:
             print(f"⚠️ Telegram 發送失敗: {e}")
@@ -55,7 +58,7 @@ class StockNotifier:
             return False
 
         report_time = self.get_now_time_str()
-        
+
         # --- 1. 處理下載統計數據 (防止 0 或 None 導致報表崩潰) ---
         if stats is None:
             stats = {}
@@ -64,7 +67,7 @@ class StockNotifier:
         total_count = stats.get('total', len(report_df))
         # 成功家數
         success_count = stats.get('success', len(report_df))
-        
+
         # 計算今日覆蓋率 (百分比)
         try:
             total_val = int(total_count)
@@ -98,7 +101,7 @@ class StockNotifier:
             <div style="max-width: 800px; margin: auto; border: 1px solid #ddd; border-top: 10px solid #28a745; border-radius: 10px; padding: 25px;">
                 <h2 style="color: #1a73e8; border-bottom: 2px solid #eee; padding-bottom: 10px;">{market_name} 全方位監控報告</h2>
                 <p style="color: #666;">生成時間: <b>{report_time} (台北時間)</b></p>
-                
+
                 <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; display: flex; justify-content: space-around; border: 1px solid #eee; text-align: center;">
                     <div style="flex: 1;">
                         <div style="font-size: 12px; color: #888;">應收標的</div>
@@ -115,8 +118,8 @@ class StockNotifier:
                 </div>
 
                 <p style="background-color: #fff9db; padding: 12px; border-left: 4px solid #fcc419; font-size: 14px; color: #666; margin: 20px 0;">
-                    💡 <b>提示：</b>下方的數據報表若包含股票代號，可至  
-                    <a href="{p_url}" target="_blank" style="color: #e67e22; text-decoration: none; font-weight: bold;">{p_name}</a> 
+                    💡 <b>提示：</b>下方的數據報表若包含股票代號，可至
+                    <a href="{p_url}" target="_blank" style="color: #e67e22; text-decoration: none; font-weight: bold;">{p_name}</a>
                     查看該市場之即時技術線圖。
                 </p>
         """
@@ -180,11 +183,11 @@ class StockNotifier:
                 "attachments": attachments
             })
             print(f"✅ {market_name} 郵件報告已寄送！")
-            
+
             # --- 7. 發送 Telegram 簡報 ---
             tg_msg = f"📊 <b>{market_name} 監控報表已送達</b>\n涵蓋率: {success_rate}\n處理樣本: {success_count} 檔"
             self.send_telegram(tg_msg)
-            
+
             return True
         except Exception as e:
             print(f"❌ 寄送失敗: {e}")
